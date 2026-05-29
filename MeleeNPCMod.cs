@@ -4,143 +4,167 @@ using GTA.UI;
 using GTAVWebhook.Types;
 using System;
 using System.Collections.Generic;
-using System.Windows.Forms;
 
 namespace GTAVWebhook.Mods
 {
     /// <summary>
-    /// Example mod: Spawn NPCs with random melee weapons
-    /// Press F5 to spawn a single melee NPC
-    /// Press F6 to spawn 5 melee NPCs in a circle
-    /// Press F7 to remove all spawned NPCs
+    /// Webhook-triggered mod: Spawn NPCs with random melee weapons via TikTok interactions
+    /// 
+    /// HTTP Webhook Commands:
+    /// - GET /cmd?cmd=spawnmelee&custom=1 - Spawn 1 NPC
+    /// - GET /cmd?cmd=spawnmelee&custom=5 - Spawn 5 NPCs
+    /// - GET /cmd?cmd=clearmelee - Remove all NPCs
+    /// 
+    /// Usage with TikTok:
+    /// Send webhook from TikTok integration server to trigger melee NPC spawning
     /// </summary>
-    public class MeleeNPCMod : Script
+    public class MeleeNPCWebhookHandler : Script
     {
         private List<MeleeNPCSpawner> spawnedNPCs = new List<MeleeNPCSpawner>();
-        private bool showHelpText = true;
+        private HttpServer httpServer = new HttpServer();
+        private int wave = 0;
+        private bool showNotifications = true;
 
-        public MeleeNPCMod()
+        public MeleeNPCWebhookHandler()
         {
             Tick += OnTick;
-            KeyDown += OnKeyDown;
             
-            UI.Notify("Melee NPC Spawner Mod Loaded");
-            UI.Notify("Press F5: Spawn 1 NPC");
-            UI.Notify("Press F6: Spawn 5 NPCs");
-            UI.Notify("Press F7: Remove All");
+            UI.Notify("~g~Melee NPC Webhook Handler Loaded");
+            UI.Notify("~b~Listening for webhook commands...");
         }
 
         private void OnTick(object sender, EventArgs e)
         {
-            // Draw names of all spawned NPCs
-            foreach (var npc in spawnedNPCs)
+            try
             {
-                npc.DrawName();
+                // Process incoming webhook commands
+                CommandInfo command = httpServer.DequeueCommand();
+
+                if (command != null)
+                {
+                    HandleWebhookCommand(command);
+                }
+
+                // Draw names of all spawned NPCs
+                foreach (var npc in spawnedNPCs)
+                {
+                    npc.DrawName();
+                }
+
+                // Remove dead NPCs from the list
+                spawnedNPCs.RemoveAll(n => !n.IsAlive());
+
+                // Display active NPC count on screen
+                if (spawnedNPCs.Count > 0)
+                {
+                    new TextElement($"~g~Active Melee NPCs: {spawnedNPCs.Count}", new PointF(10, 100), 0.5f).Draw();
+                }
             }
-
-            // Remove dead NPCs from the list
-            spawnedNPCs.RemoveAll(n => !n.IsAlive());
-
-            // Display help text on screen
-            if (showHelpText)
+            catch (Exception ex)
             {
-                var textElements = new List<string>
-                {
-                    "~r~[MELEE NPC SPAWNER]",
-                    "~b~F5~s~ - Spawn Single NPC",
-                    "~b~F6~s~ - Spawn 5 NPCs",
-                    "~b~F7~s~ - Remove All NPCs",
-                    $"~g~Active NPCs: {spawnedNPCs.Count}",
-                };
+                Logger.Log($"Error in MeleeNPCWebhookHandler.OnTick: {ex.Message}");
+            }
+        }
 
-                float yOffset = 0.1f;
-                foreach (var text in textElements)
+        /// <summary>
+        /// Handles incoming webhook commands from TikTok
+        /// </summary>
+        private void HandleWebhookCommand(CommandInfo command)
+        {
+            if (command == null)
+                return;
+
+            string cmd = command.cmd.ToLower();
+            string username = command.username ?? "TikTok";
+
+            try
+            {
+                switch (cmd)
                 {
-                    new TextElement(text, new PointF(10, 100 + (yOffset * 20)), 0.5f).Draw();
-                    yOffset += 1f;
+                    case "spawnmelee":
+                        HandleSpawnMeleeCommand(command, username);
+                        break;
+
+                    case "clearmelee":
+                        HandleClearMeleeCommand(username);
+                        break;
+
+                    default:
+                        // Command not recognized by this handler
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Error handling webhook command '{cmd}': {ex.Message}");
+                if (showNotifications)
+                {
+                    UI.Notify($"~r~Error: {ex.Message}");
                 }
             }
         }
 
-        private void OnKeyDown(object sender, KeyEventArgs e)
+        /// <summary>
+        /// Spawns melee NPCs based on webhook command
+        /// Custom parameter: number of NPCs to spawn (default: 1)
+        /// </summary>
+        private void HandleSpawnMeleeCommand(CommandInfo command, string username)
         {
-            switch (e.KeyCode)
+            int count = 1;
+
+            // Parse the custom parameter for NPC count
+            if (!string.IsNullOrEmpty(command.custom))
             {
-                case Keys.F5:
-                    // Spawn a single melee NPC
-                    SpawnSingleNPC();
-                    e.Handled = true;
-                    break;
-
-                case Keys.F6:
-                    // Spawn multiple melee NPCs
-                    SpawnMultipleNPCs(5);
-                    e.Handled = true;
-                    break;
-
-                case Keys.F7:
-                    // Remove all spawned NPCs
-                    RemoveAllNPCs();
-                    e.Handled = true;
-                    break;
-
-                case Keys.F8:
-                    // Toggle help text
-                    showHelpText = !showHelpText;
-                    e.Handled = true;
-                    break;
+                if (int.TryParse(command.custom, out int parsedCount) && parsedCount > 0)
+                {
+                    count = Math.Min(parsedCount, 10); // Cap at 10 NPCs per command
+                }
             }
+
+            wave++;
+            var spawners = MeleeNPCSpawner.SpawnMultiple(count, $"{username}_Wave{wave}");
+            spawnedNPCs.AddRange(spawners);
+
+            if (showNotifications)
+            {
+                UI.Notify($"~g~{username} spawned {count} melee attacker(s)!");
+            }
+
+            Logger.Log($"[TikTok] {username} spawned {count} melee NPC(s)");
         }
 
-        private void SpawnSingleNPC()
+        /// <summary>
+        /// Clears all spawned melee NPCs based on webhook command
+        /// </summary>
+        private void HandleClearMeleeCommand(string username)
         {
-            try
-            {
-                var spawner = new MeleeNPCSpawner($"Melee_{spawnedNPCs.Count + 1}", 5f);
-                spawnedNPCs.Add(spawner);
+            int cleared = spawnedNPCs.Count;
 
-                WeaponHash weapon = spawner.GetCurrentWeapon();
-                UI.Notify($"~g~Spawned NPC with {weapon}!");
-            }
-            catch (Exception ex)
-            {
-                UI.Notify($"~r~Error: {ex.Message}");
-            }
-        }
-
-        private void SpawnMultipleNPCs(int count)
-        {
-            try
-            {
-                var spawners = MeleeNPCSpawner.SpawnMultiple(count, $"Wave_{spawnedNPCs.Count}");
-                spawnedNPCs.AddRange(spawners);
-
-                UI.Notify($"~g~Spawned {count} NPCs!");
-            }
-            catch (Exception ex)
-            {
-                UI.Notify($"~r~Error: {ex.Message}");
-            }
-        }
-
-        private void RemoveAllNPCs()
-        {
             foreach (var npc in spawnedNPCs)
             {
                 npc.Remove();
             }
             spawnedNPCs.Clear();
 
-            UI.Notify("~r~All NPCs removed!");
+            if (showNotifications)
+            {
+                UI.Notify($"~y~{username} cleared {cleared} attacker(s)!");
+            }
+
+            Logger.Log($"[TikTok] {username} cleared {cleared} melee NPC(s)");
         }
 
         protected override void Dispose(bool disposing)
         {
             if (disposing)
             {
-                RemoveAllNPCs();
+                foreach (var npc in spawnedNPCs)
+                {
+                    npc.Remove();
+                }
+                spawnedNPCs.Clear();
+
                 Tick -= OnTick;
-                KeyDown -= OnKeyDown;
             }
 
             base.Dispose(disposing);

@@ -1,9 +1,10 @@
-# Melee NPC Spawner Mod
+# Melee NPC Spawner Mod - Webhook Edition
 
-A custom GTA V mod that spawns NPCs with random melee weapons, built on top of the GTA5-TikTok-Integration codebase.
+A custom GTA V mod that spawns NPCs with random melee weapons triggered by HTTP Webhook signals from TikTok interactions, built on the GTA5-TikTok-Integration framework.
 
 ## Features
 
+- **Webhook-Triggered**: Spawns NPCs in response to TikTok interactions via HTTP webhooks
 - **Random Melee Weapons**: Spawns NPCs with randomly selected melee weapons including:
   - Baseball Bat
   - Crowbar
@@ -23,59 +24,52 @@ A custom GTA V mod that spawns NPCs with random melee weapons, built on top of t
   - Unarmed
 
 - **Flexible Spawning**: 
-  - Spawn single NPCs
+  - Spawn 1 or multiple NPCs per command
   - Spawn multiple NPCs in a circular formation
+  - Clear all NPCs on demand
   - Automatic NPC cleanup for dead NPCs
-  - Display NPC names on screen
+  - Display NPC names with TikTok username
 
-- **Easy Integration**: Works seamlessly with the existing webhook system
-
-## Files Added
+## Files Used
 
 1. **Types/MeleeNPCSpawner.cs** - Core spawner class with melee weapon logic
-2. **MeleeNPCMod.cs** - Example mod demonstrating usage with keyboard controls
+2. **MeleeNPCMod.cs** - Webhook handler that listens for HTTP signals
 
-## Usage
+## Webhook Commands
 
-### In-Game Controls (MeleeNPCMod.cs)
-
-- **F5**: Spawn a single NPC with a random melee weapon
-- **F6**: Spawn 5 NPCs in a circle around the player
-- **F7**: Remove all spawned NPCs
-- **F8**: Toggle help text display
-
-### Code Integration
-
-```csharp
-using GTAVWebhook.Types;
-
-// Spawn a single NPC with melee weapon
-var spawner = new MeleeNPCSpawner("Attacker_1", 5f);
-
-// Spawn multiple NPCs
-var spawners = MeleeNPCSpawner.SpawnMultiple(5, "Wave_1");
-
-// Check if NPC is alive
-if (spawner.IsAlive())
-{
-    // Do something
-}
-
-// Get the weapon the NPC has
-WeaponHash weapon = spawner.GetCurrentWeapon();
-
-// Remove the NPC
-spawner.Remove();
-
-// Get random melee weapon
-WeaponHash randomWeapon = MeleeNPCSpawner.GetRandomMeleeWeapon();
+### Spawn Melee NPCs
 ```
+GET /cmd?cmd=spawnmelee&custom=1&username=TikTokUser
+```
+- `cmd`: `spawnmelee` - Spawn NPC command
+- `custom`: Number of NPCs to spawn (1-10, default: 1)
+- `username`: TikTok username of the person triggering the command
+
+**Example:**
+- `/cmd?cmd=spawnmelee&custom=1&username=john_doe` - Spawns 1 NPC
+- `/cmd?cmd=spawnmelee&custom=5&username=jane_smith` - Spawns 5 NPCs
+
+### Clear All Melee NPCs
+```
+GET /cmd?cmd=clearmelee&username=TikTokUser
+```
+- `cmd`: `clearmelee` - Clear all NPCs command
+- `username`: TikTok username
+
+## How It Works
+
+1. **TikTok Integration**: TikTok events (follows, gifts, donations, etc.) are sent to your webhook server
+2. **HTTP Request**: The webhook server receives HTTP GET requests with command parameters
+3. **NPC Spawning**: The mod receives the command and spawns melee NPCs around the player
+4. **Combat**: Spawned NPCs automatically engage in combat with the player
+5. **Tracking**: The mod tracks all spawned NPCs and removes dead ones automatically
+6. **Display**: NPC names are displayed on-screen with the TikTok username
 
 ## Installation
 
 1. Copy the files to your GTA5-TikTok-Integration project:
    - `Types/MeleeNPCSpawner.cs`
-   - `MeleeNPCMod.cs` (optional - only if you want the standalone mod)
+   - `MeleeNPCMod.cs`
 
 2. Add the new files to your .csproj file:
    ```xml
@@ -85,21 +79,61 @@ WeaponHash randomWeapon = MeleeNPCSpawner.GetRandomMeleeWeapon();
 
 3. Build the project in Visual Studio
 
-4. Load the compiled DLL into GTA V using Script Hook V .NET
+4. Integrate the command handler in your webhook processing system
 
-## Integration with Existing Webhook System
+5. Load the compiled DLL into GTA V using Script Hook V .NET
 
-You can also integrate this with the existing webhook system in `GTAVWebhookScript.cs`:
+## Integration with TikTok Webhook Server
+
+In your webhook server configuration, add routes for melee NPC commands:
 
 ```csharp
-public void HandleSpawnMeleeCommand(CommandInfo cmd)
-{
-    int count = string.IsNullOrEmpty(cmd.custom) ? 1 : int.Parse(cmd.custom);
-    var spawners = MeleeNPCSpawner.SpawnMultiple(count, cmd.username);
-}
+// In your webhook server setup
+server.RegisterCommand("spawnmelee", HandleMeleeSpawn);
+server.RegisterCommand("clearmelee", HandleMeleeClear);
 ```
 
+### Example TikTok Interaction Mappings
+
+- **Follow**: `spawnmelee&custom=1`
+- **Gift (Gold Coins)**: `spawnmelee&custom=3`
+- **Super Follow**: `spawnmelee&custom=5`
+- **Large Gift/Donation**: `spawnmelee&custom=10` (capped at 10)
+- **Host/Raid**: `clearmelee` (clears the arena)
+
+## Configuration
+
+### Spawn Limits
+- Maximum 10 NPCs per single command
+- NPCs are capped to prevent performance issues
+- Dead NPCs are automatically cleaned up
+
+### Positioning
+- NPCs spawn in a circular formation around the player
+- Distance increases with each NPC to avoid overlap
+- Elevation adjusted based on player location (vehicle or ground)
+
+### Combat
+- All NPCs engage in melee combat with the player
+- Weapon selection is random from the available pool
+- NPC health is set to 100 by default
+
 ## Class Reference
+
+### MeleeNPCWebhookHandler
+
+#### Constructor
+```csharp
+public MeleeNPCWebhookHandler()
+```
+- Initializes the webhook handler
+- Listens for incoming HTTP commands
+
+#### Private Methods
+- `OnTick()` - Main game loop handler
+- `HandleWebhookCommand(CommandInfo)` - Routes commands
+- `HandleSpawnMeleeCommand(CommandInfo, string)` - Spawns NPCs
+- `HandleClearMeleeCommand(string)` - Clears all NPCs
 
 ### MeleeNPCSpawner
 
@@ -107,7 +141,7 @@ public void HandleSpawnMeleeCommand(CommandInfo cmd)
 ```csharp
 public MeleeNPCSpawner(string name, float spawnDistance = 5f)
 ```
-- `name`: Display name for the NPC
+- `name`: Display name for the NPC (includes TikTok username)
 - `spawnDistance`: Distance to spawn from player (default: 5 units)
 
 #### Public Methods
@@ -127,29 +161,78 @@ public MeleeNPCSpawner(string name, float spawnDistance = 5f)
 - Script Hook V .NET 3
 - Visual Studio 2017+ (for compilation)
 - .NET Framework 4.8+
+- TikTok Webhook Server configured and running
 
-## Technical Details
+## Logging
 
-- NPCs spawn at the player's position + forward vector
-- If player is in a vehicle, NPCs spawn slightly elevated
-- NPCs automatically engage in combat with the player
-- Dead NPCs are automatically removed from tracking
-- Names are displayed on screen when within 30 units and visible
+All webhook commands are logged to the in-game logger:
+- Successful spawns: `[TikTok] {username} spawned {count} melee NPC(s)`
+- Successful clears: `[TikTok] {username} cleared {cleared} melee NPC(s)`
+- Errors are logged with exception details
 
 ## Performance Considerations
 
 - Each NPC spawned adds to game memory usage
-- Spawning too many NPCs simultaneously may cause performance issues
-- Use `RemoveAllNPCs()` or individual `Remove()` calls to clean up
+- Spawning many NPCs rapidly may cause performance issues
+- Use `clearmelee` command periodically to clean up
+- Server-side rate limiting recommended to prevent spam
+
+## Advanced Usage
+
+### Custom Command Parameters
+
+Extend the webhook handler to accept custom parameters:
+
+```csharp
+private void HandleSpawnMeleeCommand(CommandInfo command, string username)
+{
+    // Parse custom parameters
+    var parameters = command.custom.Split(',');
+    int count = int.Parse(parameters[0]);
+    float distance = parameters.Length > 1 ? float.Parse(parameters[1]) : 5f;
+    
+    // Spawn with custom parameters
+}
+```
+
+### Event Integration
+
+Map specific TikTok events to different NPC counts:
+
+```csharp
+// In your TikTok event handler
+if (eventType == "follow")
+    SendWebhookCommand("spawnmelee", "1", username);
+else if (eventType == "donation" && amount > 100)
+    SendWebhookCommand("spawnmelee", "5", username);
+```
+
+## Troubleshooting
+
+### NPCs not spawning
+- Check that the webhook server is running
+- Verify the command format is correct
+- Ensure the mod DLL is loaded in GTA V
+- Check logs for error messages
+
+### Performance issues
+- Reduce the number of NPCs spawned per command
+- Clear NPCs more frequently
+- Check system resources
+
+### Webhook not connecting
+- Verify the correct port is configured
+- Check firewall settings
+- Ensure TikTok integration server is sending requests
 
 ## Future Enhancement Ideas
 
-- Customize NPC behavior (pacifist, aggressive, etc.)
-- Add support for ranged weapons
-- Group formations and tactics
-- Difficulty scaling
-- Wave system with progressively harder NPCs
-- Webhook integration for remote spawning
+- Customize NPC behavior per TikTok event type
+- Add difficulty scaling with wave progression
+- Support for ranged weapon variation
+- NPC squad tactics and formations
+- Boss NPC spawning for special events
+- Leaderboard tracking for event triggers
 
 ## License
 
@@ -157,7 +240,9 @@ Built on the GTA5-TikTok-Integration framework. Follow the license terms of the 
 
 ## Notes
 
-- This mod is for educational purposes
+- This mod is for entertainment purposes
 - Use responsibly and respect Rockstar Games' terms of service
 - Based on Script Hook V by Alexander Blade
 - Uses GTA.NET by crosire
+- Part of the GTA5-TikTok-Integration project
+
