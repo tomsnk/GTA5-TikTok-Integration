@@ -4,6 +4,7 @@ using GTA.UI;
 using GTAVWebhook.Types;
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 
 namespace GTAVWebhook.Mods
 {
@@ -25,6 +26,13 @@ namespace GTAVWebhook.Mods
         private int wave = 0;
         private bool showNotifications = true;
 
+        // ==========================================
+        // KONFIGURASI BATAS DARAH (HEALTH LIMIT)
+        // ==========================================
+        // Nilai standar darah NPC GTA V adalah 200. Anda bisa mengubah angka ini
+        // untuk membatasi atau mempertebal darah maksimal NPC kiriman TikTok.
+        private int npcMaxHealthLimit = 350;
+
         public MeleeNPCWebhookHandler()
         {
             Tick += OnTick;
@@ -45,10 +53,11 @@ namespace GTAVWebhook.Mods
                     HandleWebhookCommand(command);
                 }
 
-                // Draw names of all spawned NPCs
+                // Draw names and health bars of all spawned NPCs
                 foreach (var npc in spawnedNPCs)
                 {
                     npc.DrawName();
+                    DrawHealthBar(npc); // <--- MENAMPILKAN BAR DARAH DI ATAS KEPALA
                 }
 
                 // Remove dead NPCs from the list
@@ -105,24 +114,82 @@ namespace GTAVWebhook.Mods
         }
 
         /// <summary>
+        /// Menggambar Bar Darah di atas kepala NPC menggunakan koordinat layar 3D ke 2D
+        /// </summary>
+        private void DrawHealthBar(MeleeNPCSpawner npc)
+        {
+            // PENTING: Kode ini mengasumsikan kelas 'MeleeNPCSpawner' Anda memiliki properti 'GetPed()' 
+            // yang mengekspos objek GTA.Ped asli. Jika namanya berbeda (misal .Character / .Npc), sesuaikan di bawah ini.
+            if (npc == null || npc.GetPed() == null || !npc.GetPed().Exists() || !npc.IsAlive())
+                return;
+
+            // Mengambil posisi kepala NPC dan memberi sedikit jarak ke atas (Z + 1.2f)
+            Vector3 worldPosition = npc.GetPed().Position + new Vector3(0, 0, 1.2f);
+            PointF screenPosition = Screen.WorldToScreen(worldPosition);
+
+            // Jika NPC tidak terlihat di layar kamera game, lewati proses render
+            if (screenPosition.X == 0 && screenPosition.Y == 0)
+                return;
+
+            // Menghitung rasio darah tersisa
+            float maxHealth = npc.GetPed().MaxHealth;
+            float currentHealth = npc.GetPed().Health;
+            
+            if (currentHealth < 0) currentHealth = 0;
+            float healthRatio = Math.Max(0f, Math.Min(1f, currentHealth / maxHealth));
+
+            // Pengaturan dimensi ukuran Bar Darah (Canvas GTA menggunakan skala standar 1280x720)
+            float barWidth = 45f;
+            float barHeight = 5f;
+
+            // Menyelaraskan posisi bar agar tepat berada di tengah atas kepala
+            PointF barPos = new PointF(screenPosition.X - (barWidth / 2f), screenPosition.Y);
+
+            // 1. Gambar Background Bar (Warna Hitam Transparan)
+            new RectangleElement(barPos, new SizeF(barWidth, barHeight), Color.FromArgb(120, 0, 0, 0)).Draw();
+
+            // 2. Tentukan warna bar dinamis berdasarkan sisa darah
+            Color healthColor = Color.FromArgb(200, 0, 255, 0); // Hijau (Darah Sehat)
+            if (healthRatio < 0.25f)
+                healthColor = Color.FromArgb(200, 255, 0, 0);  // Merah (Kritis)
+            else if (healthRatio < 0.60f)
+                healthColor = Color.FromArgb(200, 255, 230, 0); // Kuning (Setengah Darah)
+
+            // 3. Gambar Isi Bar Darah Utama (Sesuai sisa healthRatio)
+            float currentBarWidth = barWidth * healthRatio;
+            new RectangleElement(barPos, new SizeF(currentBarWidth, barHeight), healthColor).Draw();
+        }
+
+        /// <summary>
         /// Spawns melee NPCs based on webhook command
-        /// Custom parameter: number of NPCs to spawn (default: 1)
         /// </summary>
         private void HandleSpawnMeleeCommand(CommandInfo command, string username)
         {
             int count = 1;
 
-            // Parse the custom parameter for NPC count
             if (!string.IsNullOrEmpty(command.custom))
             {
                 if (int.TryParse(command.custom, out int parsedCount) && parsedCount > 0)
                 {
-                    count = Math.Min(parsedCount, 10); // Cap at 10 NPCs per command
+                    count = Math.Min(parsedCount, 10); 
                 }
             }
 
             wave++;
             var spawners = MeleeNPCSpawner.SpawnMultiple(count, $"{username}_Wave{wave}");
+
+            // ==========================================
+            // MENERAPKAN BATAS DARAH MAKSIMAL (HEALTH LIMIT)
+            // ==========================================
+            foreach (var spawner in spawners)
+            {
+                if (spawner != null && spawner.GetPed() != null && spawner.GetPed().Exists())
+                {
+                    spawner.GetPed().MaxHealth = npcMaxHealthLimit;
+                    spawner.GetPed().Health = npcMaxHealthLimit;
+                }
+            }
+
             spawnedNPCs.AddRange(spawners);
 
             if (showNotifications)
@@ -130,7 +197,7 @@ namespace GTAVWebhook.Mods
                 UI.Notify($"~g~{username} spawned {count} melee attacker(s)!");
             }
 
-            Logger.Log($"[TikTok] {username} spawned {count} melee NPC(s)");
+            Logger.Log($"[TikTok] {username} spawned {count} melee NPC(s) dengan batas darah {npcMaxHealthLimit}");
         }
 
         /// <summary>
